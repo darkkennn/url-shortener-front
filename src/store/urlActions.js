@@ -49,7 +49,12 @@ export const createShortUrl = async (dispatch, fullUrl, userId) => {
       throw new Error("User not authenticated. Please log in to shorten URLs.");
     }
 
-    const response = await fetch('/api/create', {
+    const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+    if (!API_BASE_URL) {
+        throw new Error("API base URL is not configured.");
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/create`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
