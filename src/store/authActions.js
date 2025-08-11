@@ -1,5 +1,5 @@
 import { collection, query, onSnapshot, addDoc } from 'firebase/firestore';
-import { db, currentAppId, auth } from 'config/firebase';
+import { db, currentAppId, auth } from 'configs/firebase';
 import { SET_LOADING, SET_ERROR, CLEAR_ERROR } from './index';
 
 export const SET_URLS = 'SET_URLS';
