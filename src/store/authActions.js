@@ -1,92 +1,63 @@
-import { collection, query, onSnapshot, addDoc } from 'firebase/firestore';
-import { db, currentAppId, auth } from 'configs/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db, currentAppId } from 'configs/firebase';
 import { SET_LOADING, SET_ERROR, CLEAR_ERROR } from './index';
 
-export const SET_URLS = 'SET_URLS';
-export const ADD_URL = 'ADD_URL';
+export const AUTH_SUCCESS = 'AUTH_SUCCESS';
+export const AUTH_FAILURE = 'AUTH_FAILURE';
+export const LOGOUT = 'LOGOUT';
 
-export const urlReducer = (state, action) => {
+export const authReducer = (state, action) => {
   switch (action.type) {
-    case SET_URLS:
-      return { ...state, urls: action.payload };
-    case ADD_URL:
-      return { ...state, urls: [action.payload, ...state.urls] };
+    case AUTH_SUCCESS:
+      return { ...state, user: action.payload, isAuthenticated: true, authError: null };
+    case AUTH_FAILURE:
+      return { ...state, user: null, isAuthenticated: false, authError: action.payload };
+    case LOGOUT:
+      return { ...state, user: null, isAuthenticated: false, authError: null };
     default:
       return state;
   }
 };
 
-export const fetchUrls = (dispatch, userId) => {
-  if (!userId) {
-    dispatch({ type: SET_URLS, payload: [] });
-    return;
-  }
-
-  const userUrlsCollectionRef = collection(db, `artifacts/${currentAppId}/users/${userId}/shortenedUrls`);
-
-  const q = query(userUrlsCollectionRef);
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    const urls = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    dispatch({ type: SET_URLS, payload: urls });
-  }, (error) => {
-    dispatch({ type: SET_ERROR, payload: "Failed to load URLs." });
-  });
-
-  return unsubscribe;
-};
-
-export const createShortUrl = async (dispatch, fullUrl, userId) => {
+export const login = async (dispatch, email, password) => {
   dispatch({ type: CLEAR_ERROR });
   dispatch({ type: SET_LOADING, payload: true });
   try {
-    new URL(fullUrl);
-
-    const user = auth.currentUser;
-    let token = null;
-    if (user) {
-      token = await user.getIdToken();
-    } else {
-      throw new Error("User not authenticated. Please log in to shorten URLs.");
-    }
-
-    const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
-    if (!API_BASE_URL) {
-        throw new Error("API base URL is not configured.");
-    }
-
-    const response = await fetch(`${API_BASE_URL}api/create`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ url: fullUrl, userId }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to shorten URL');
-    }
-
-    const userUrlsCollectionRef = collection(db, `artifacts/${currentAppId}/users/${userId}/shortenedUrls`);
-    await addDoc(userUrlsCollectionRef, {
-      full_url: fullUrl,
-      short_url: data.shortUrl,
-      userId: userId,
-      clicks: 0,
-      createdAt: new Date(),
-    });
-
-    dispatch({ type: ADD_URL, payload: { full_url: fullUrl, short_url: data.shortUrl, userId, clicks: 0, createdAt: new Date() } });
-    return data.shortUrl;
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    dispatch({ type: AUTH_SUCCESS, payload: userCredential.user });
   } catch (error) {
-    if (error instanceof TypeError && error.message.includes("Invalid URL")) {
-        dispatch({ type: SET_ERROR, payload: "Please enter a valid URL." });
-    } else {
-        dispatch({ type: SET_ERROR, payload: error.message });
-    }
+    dispatch({ type: AUTH_FAILURE, payload: error.message });
   } finally {
     dispatch({ type: SET_LOADING, payload: false });
+  }
+};
+
+export const register = async (dispatch, email, password) => {
+  dispatch({ type: CLEAR_ERROR });
+  dispatch({ type: SET_LOADING, payload: true });
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    dispatch({ type: AUTH_SUCCESS, payload: userCredential.user });
+    await setDoc(doc(db, `artifacts/${currentAppId}/users`, userCredential.user.uid), {
+      email: userCredential.user.email,
+      createdAt: new Date(),
+      appId: currentAppId,
+    });
+  } catch (error) {
+    dispatch({ type: AUTH_FAILURE, payload: error.message });
+  } finally {
+    dispatch({ type: SET_LOADING, payload: false });
+  }
+};
+
+export const logout = async (dispatch) => {
+  dispatch({ type: CLEAR_ERROR });
+  try {
+    await signOut(auth);
+    dispatch({ type: LOGOUT });
+    dispatch({ type: 'SET_URLS', payload: [] });
+  } catch (error) {
+    dispatch({ type: SET_ERROR, payload: error.message });
   }
 };
